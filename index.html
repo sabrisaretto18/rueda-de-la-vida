@@ -1,4 +1,5 @@
-<!DOCTYPE html>
+Aquí tienes todo el código completo. Selecciona todo el contenido dentro del bloque (puedes usar el botón de copiar que aparece al pasar el mouse) y pégalo en el editor de GitHub, reemplazando lo que había:
+html<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -1070,8 +1071,8 @@ function resultsHTML(){
     <div class="card">
       <div class="wheel-wrap" id="wheel-holder">${wheel}</div>
       <div class="export-row">
-        <button class="ghost" id="btn-download-png">Descargar rueda (imagen)</button>
-        <button class="ghost" id="btn-download-txt">Descargar resumen (texto)</button>
+        <button id="btn-download-pdf">Descargar PDF</button>
+        <button class="ghost" id="btn-download-png">Solo la imagen (PNG)</button>
       </div>
       <div class="legend-grid">${legend}</div>
       <div class="avg-line">Promedio general: <b>${avg} / 10</b></div>
@@ -1141,7 +1142,7 @@ function planHTML(){
         📖 Si necesitas profundizar en el aprendizaje de cada una de estas áreas, recuerda los demás materiales de <b>"El Precio del Crecimiento"</b>, donde profundizamos y damos herramientas específicas para cada área, como Finanzas, Salud Física y Autoestima e Imagen Personal.
       </div>
       <div class="export-row">
-        <button class="ghost" id="btn-download-txt2">Descargar mi resumen completo</button>
+        <button id="btn-download-pdf2">Descargar mi resumen en PDF</button>
       </div>
       <div class="nav-row">
         <button class="ghost" id="btn-back-to-results2">Volver a mi rueda</button>
@@ -1315,11 +1316,11 @@ function attachHandlers(){
   const dlPng = document.getElementById("btn-download-png");
   if(dlPng) dlPng.addEventListener("click", downloadWheelPNG);
 
-  const dlTxt = document.getElementById("btn-download-txt");
-  if(dlTxt) dlTxt.addEventListener("click", downloadSummaryText);
+  const dlPdf = document.getElementById("btn-download-pdf");
+  if(dlPdf) dlPdf.addEventListener("click", ()=>downloadResultsPDF(dlPdf));
 
-  const dlTxt2 = document.getElementById("btn-download-txt2");
-  if(dlTxt2) dlTxt2.addEventListener("click", downloadSummaryText);
+  const dlPdf2 = document.getElementById("btn-download-pdf2");
+  if(dlPdf2) dlPdf2.addEventListener("click", ()=>downloadResultsPDF(dlPdf2));
 
   const restartBtn = document.getElementById("btn-restart");
   if(restartBtn) restartBtn.addEventListener("click", ()=>{
@@ -1330,75 +1331,188 @@ function attachHandlers(){
   });
 }
 
-function downloadWheelPNG(){
-  const holder = document.getElementById("wheel-holder");
-  if(!holder) return;
-  const svgEl = holder.querySelector("svg");
-  if(!svgEl) return;
-  const clone = svgEl.cloneNode(true);
-  clone.setAttribute("xmlns","http://www.w3.org/2000/svg");
-  const vb = clone.getAttribute("viewBox").split(" ").map(Number);
-  const w = vb[2], h = vb[3];
-  const scale = 2;
-  const svgData = new XMLSerializer().serializeToString(clone);
-  const svgBlob = new Blob([svgData], {type:"image/svg+xml;charset=utf-8"});
-  const url = URL.createObjectURL(svgBlob);
-  const img = new Image();
-  img.onload = function(){
-    const canvas = document.createElement("canvas");
-    canvas.width = w*scale; canvas.height = h*scale;
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#FAF7F1";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    URL.revokeObjectURL(url);
-    canvas.toBlob(function(blob){
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "mi-rueda-de-la-vida.png";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    });
-  };
-  img.src = url;
+function loadJsPDF(){
+  return new Promise((resolve,reject)=>{
+    if(window.jspdf && window.jspdf.jsPDF){ resolve(window.jspdf.jsPDF); return; }
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    script.onload = ()=>{
+      if(window.jspdf && window.jspdf.jsPDF) resolve(window.jspdf.jsPDF);
+      else reject(new Error("No se pudo preparar el generador de PDF."));
+    };
+    script.onerror = ()=>reject(new Error("No se pudo cargar el generador de PDF. Revisa tu conexión a internet e intenta de nuevo."));
+    document.head.appendChild(script);
+  });
 }
 
-function downloadSummaryText(){
-  const lines = [];
-  lines.push("LA RUEDA DE LA VIDA — Mi auditoría");
-  lines.push("Fecha: "+new Date().toLocaleDateString("es-ES",{day:"numeric",month:"long",year:"numeric"}));
-  lines.push("");
-  AREAS.forEach((a,i)=>{
-    lines.push(`${i+1}. ${a.name}: ${state.ratings[i]}/10`);
-    if(state.notes[i]) lines.push(`   Notas: ${state.notes[i]}`);
+function svgStringToPngDataUrl(svgString, size, scale){
+  return new Promise((resolve,reject)=>{
+    const svgBlob = new Blob([svgString], {type:"image/svg+xml;charset=utf-8"});
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = function(){
+      const canvas = document.createElement("canvas");
+      canvas.width = size*scale; canvas.height = size*scale;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#FAF7F1";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error("No se pudo dibujar la rueda.")); };
+    img.src = url;
   });
-  const avg = (state.ratings.reduce((s,v)=>s+v,0)/state.ratings.length).toFixed(1);
-  lines.push("");
-  lines.push(`Promedio general: ${avg}/10`);
+}
 
-  const ranked = AREAS.map((a,i)=>({a,i,v:state.ratings[i]})).sort((x,y)=>x.v-y.v);
-  lines.push("");
-  lines.push("Plan de acción, en orden de prioridad:");
-  ranked.forEach((r,rank)=>{
-    lines.push(`${rank+1}. ${r.a.name} (${r.v}/10)`);
-    const checks = state.checked[r.a.key];
-    if(checks){
-      r.a.actions.forEach((act,idx)=>{
-        lines.push(`   [${checks[idx]?"x":" "}] ${act}`);
-      });
-    }
-  });
-  lines.push("");
-  lines.push("Elige las acciones que más se adapten a tu realidad actual: las que puedas aplicar a partir de hoy.");
+function hexToRgb(hex){
+  const num = parseInt(hex.slice(1),16);
+  return [(num>>16)&255, (num>>8)&255, num&255];
+}
 
-  const blob = new Blob([lines.join("\n")], {type:"text/plain;charset=utf-8"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "mi-rueda-de-la-vida.txt";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+function downloadWheelPNG(){
+  const svgString = buildWheelSVG(state.ratings, {size:640});
+  svgStringToPngDataUrl(svgString, 640, 2).then(dataUrl=>{
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = "mi-rueda-de-la-vida.png";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }).catch(()=>{ alert("No se pudo generar la imagen. Intenta de nuevo."); });
+}
+
+async function downloadResultsPDF(triggerEl){
+  const originalText = triggerEl ? triggerEl.textContent : "";
+  if(triggerEl){ triggerEl.textContent = "Generando PDF…"; triggerEl.disabled = true; }
+  try{
+    const JsPDFCtor = await loadJsPDF();
+    const svgString = buildWheelSVG(state.ratings, {size:640});
+    const wheelPng = await svgStringToPngDataUrl(svgString, 640, 2);
+
+    const doc = new JsPDFCtor({unit:"pt", format:"a4"});
+    const pageW = 595.28, pageH = 841.89, margin = 48;
+    let y = margin + 8;
+
+    const ensureSpace = (needed)=>{
+      if(y + needed > pageH - margin){ doc.addPage(); y = margin + 8; }
+    };
+
+    doc.setFont("helvetica","bold");
+    doc.setFontSize(20);
+    doc.setTextColor(30,42,34);
+    doc.text("La Rueda de la Vida", margin, y);
+    y += 20;
+
+    doc.setFont("helvetica","normal");
+    doc.setFontSize(10.5);
+    doc.setTextColor(110,105,95);
+    const fecha = new Date().toLocaleDateString("es-ES",{day:"numeric",month:"long",year:"numeric"});
+    doc.text("Mi auditoría — "+fecha, margin, y);
+    y += 26;
+
+    const imgSize = 220;
+    const imgX = (pageW - imgSize)/2;
+    doc.addImage(wheelPng, "PNG", imgX, y, imgSize, imgSize);
+    y += imgSize + 22;
+
+    const avg = (state.ratings.reduce((s,v)=>s+v,0)/state.ratings.length).toFixed(1);
+    doc.setFont("helvetica","bold");
+    doc.setFontSize(13);
+    doc.setTextColor(30,42,34);
+    doc.text(`Promedio general: ${avg} / 10`, pageW/2, y, {align:"center"});
+    y += 28;
+
+    doc.setDrawColor(220,213,198);
+    doc.line(margin, y, pageW-margin, y);
+    y += 22;
+
+    doc.setFont("helvetica","bold");
+    doc.setFontSize(13);
+    doc.setTextColor(30,42,34);
+    doc.text("Áreas en orden de prioridad", margin, y);
+    y += 15;
+    doc.setFont("helvetica","normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(110,105,95);
+    doc.text("De la calificación más baja a la más alta", margin, y);
+    y += 22;
+
+    const ranked = AREAS.map((a,i)=>({a,i,v:state.ratings[i]})).sort((x,y2)=>x.v-y2.v);
+
+    ranked.forEach((r, rank)=>{
+      ensureSpace(46);
+      const rgb = hexToRgb(r.a.colorHex);
+
+      doc.setFillColor(rgb[0],rgb[1],rgb[2]);
+      doc.circle(margin+8, y-4, 9, "F");
+      doc.setFont("helvetica","bold");
+      doc.setFontSize(9.5);
+      doc.setTextColor(255,255,255);
+      doc.text(String(rank+1), margin+8, y-4, {align:"center", baseline:"middle"});
+
+      doc.setFont("helvetica","bold");
+      doc.setFontSize(12);
+      doc.setTextColor(30,42,34);
+      doc.text(r.a.name, margin+26, y);
+
+      doc.setFont("helvetica","bold");
+      doc.setFontSize(12);
+      doc.setTextColor(rgb[0],rgb[1],rgb[2]);
+      doc.text(`${r.v}/10`, pageW-margin, y, {align:"right"});
+      y += 15;
+
+      const note = state.notes[r.i];
+      if(note){
+        doc.setFont("helvetica","italic");
+        doc.setFontSize(9.5);
+        doc.setTextColor(110,105,95);
+        const noteLines = doc.splitTextToSize("Nota: "+note, pageW-margin*2-26);
+        noteLines.forEach(line=>{
+          ensureSpace(13);
+          doc.text(line, margin+26, y);
+          y += 12;
+        });
+      }
+
+      const checks = state.checked[r.a.key];
+      if(checks && checks.some(Boolean)){
+        doc.setFont("helvetica","normal");
+        doc.setFontSize(9.5);
+        doc.setTextColor(70,66,58);
+        r.a.actions.forEach((act,idx)=>{
+          if(!checks[idx]) return;
+          ensureSpace(13);
+          const lines = doc.splitTextToSize("✓ "+act, pageW-margin*2-26);
+          lines.forEach(line=>{
+            ensureSpace(13);
+            doc.text(line, margin+26, y);
+            y += 12;
+          });
+        });
+      }
+      y += 12;
+    });
+
+    ensureSpace(60);
+    doc.setDrawColor(220,213,198);
+    doc.line(margin, y, pageW-margin, y);
+    y += 20;
+    doc.setFont("helvetica","italic");
+    doc.setFontSize(9.5);
+    doc.setTextColor(110,105,95);
+    const closing = doc.splitTextToSize("Elige las acciones que más se adapten a tu realidad actual: las que puedas aplicar a partir de hoy.", pageW-margin*2);
+    closing.forEach(line=>{ doc.text(line, margin, y); y += 13; });
+    y += 6;
+    const bookNote = doc.splitTextToSize("Si necesitas profundizar en el aprendizaje de cada una de estas áreas, recuerda los demás materiales de \"El Precio del Crecimiento\", donde profundizamos y damos herramientas específicas para cada área, como Finanzas, Salud Física y Autoestima e Imagen Personal.", pageW-margin*2);
+    bookNote.forEach(line=>{ ensureSpace(13); doc.text(line, margin, y); y += 13; });
+
+    doc.save("mi-rueda-de-la-vida.pdf");
+  }catch(err){
+    alert(err.message || "No se pudo generar el PDF. Intenta de nuevo.");
+  }finally{
+    if(triggerEl){ triggerEl.textContent = originalText; triggerEl.disabled = false; }
+  }
 }
 
 async function init(){
